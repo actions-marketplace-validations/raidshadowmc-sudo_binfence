@@ -11,7 +11,7 @@ inputs:
     description: 'Path to the compiled binary asset to audit (e.g. target/release/app or ./dist/app.exe)'
     required: true
   baseline:
-    description: 'Optional path to baseline binary, or release tag/asset to compare against for differential regressions'
+    description: 'Optional path to local baseline binary to compare against for differential regressions'
     required: false
   fail-on-degraded:
     description: 'Fail the release gate if any security mitigation degraded from baseline'
@@ -45,8 +45,10 @@ inputs:
     description: 'Require Stack Canary / /GS buffer security check'
     required: false
     default: 'false'
+  max-new-sections:
+    description: 'Maximum allowable newly added binary sections compared to baseline'
+    required: false
   max-entropy:
-
     description: 'Maximum allowable Shannon entropy (0.0 to 8.0) before flagging an anomaly'
     required: false
     default: '7.5'
@@ -61,6 +63,10 @@ inputs:
     description: 'Automatically output rich Markdown report to GITHUB_STEP_SUMMARY'
     required: false
     default: 'true'
+  version:
+    description: 'Release version of relgate to download (e.g. v0.1.0)'
+    required: false
+    default: 'v0.1.0'
 
 outputs:
   passed:
@@ -75,10 +81,75 @@ runs:
   steps:
     - name: Ensure relgate CLI is available
       shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if ! command -v relgate &> /dev/null; then
-          echo "relgate not found in PATH, installing via cargo..."
-          cargo install --git https://github.com/raidshadowmc-sudo/relgate.git || true
+        if command -v relgate &> /dev/null; then
+          echo "relgate is already available in PATH: $(command -v relgate)"
+          exit 0
+        fi
+
+        VERSION="${INPUT_VERSION:-v0.1.0}"
+        OS="${RUNNER_OS}"
+        ARCH="${RUNNER_ARCH}"
+
+        case "$OS" in
+          Linux)
+            case "$ARCH" in
+              X64) TARGET="x86_64-unknown-linux-gnu" ;;
+              ARM64) TARGET="aarch64-unknown-linux-gnu" ;;
+              *) echo "Unsupported Linux architecture: $ARCH" >&2; exit 1 ;;
+            esac
+            EXT="tar.gz"
+            ;;
+          macOS)
+            case "$ARCH" in
+              X64) TARGET="x86_64-apple-darwin" ;;
+              ARM64) TARGET="aarch64-apple-darwin" ;;
+              *) echo "Unsupported macOS architecture: $ARCH" >&2; exit 1 ;;
+            esac
+            EXT="tar.gz"
+            ;;
+          Windows)
+            case "$ARCH" in
+              X64) TARGET="x86_64-pc-windows-msvc" ;;
+              *) echo "Unsupported Windows architecture: $ARCH" >&2; exit 1 ;;
+            esac
+            EXT="zip"
+            ;;
+          *)
+            echo "Unsupported OS: $OS" >&2
+            exit 1
+            ;;
+        esac
+
+        ASSET_NAME="relgate-${TARGET}.${EXT}"
+        DOWNLOAD_URL="https://github.com/raidshadowmc-sudo/relgate/releases/download/${VERSION}/${ASSET_NAME}"
+
+        INSTALL_DIR="${RUNNER_TEMP:-/tmp}/relgate-bin"
+        mkdir -p "$INSTALL_DIR"
+
+        echo "Fetching relgate ${VERSION} for ${TARGET} from ${DOWNLOAD_URL}..."
+        HTTP_CODE=$(curl -sSL -w "%{http_code}" -o "${INSTALL_DIR}/${ASSET_NAME}" "$DOWNLOAD_URL" || true)
+
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "Downloaded ${ASSET_NAME} successfully."
+          if [ "$EXT" = "zip" ]; then
+            unzip -q -o "${INSTALL_DIR}/${ASSET_NAME}" -d "$INSTALL_DIR"
+          else
+            tar -xzf "${INSTALL_DIR}/${ASSET_NAME}" -C "$INSTALL_DIR"
+          fi
+          chmod +x "${INSTALL_DIR}/relgate"* || true
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+          echo "relgate installed to GITHUB_PATH."
+        else
+          echo "Failed to download prebuilt binary (HTTP ${HTTP_CODE}). Falling back to cargo install..." >&2
+          if command -v cargo &> /dev/null; then
+            cargo install --git https://github.com/raidshadowmc-sudo/relgate.git --locked --tag "$VERSION" || cargo install --git https://github.com/raidshadowmc-sudo/relgate.git --locked
+          else
+            echo "Error: Prebuilt binary download failed and cargo is not installed on runner." >&2
+            exit 1
+          fi
         fi
 
     - name: Run relgate evaluation
@@ -95,6 +166,7 @@ runs:
         RELGATE_REQUIRE_AUTHENTICODE: ${{ inputs.require-authenticode }}
         RELGATE_REQUIRE_CFG: ${{ inputs.require-cfg }}
         RELGATE_REQUIRE_STACK_CANARY: ${{ inputs.require-stack-canary }}
+        RELGATE_MAX_NEW_SECTIONS: ${{ inputs.max-new-sections }}
         RELGATE_MAX_ENTROPY: ${{ inputs.max-entropy }}
         RELGATE_YARA_RULES: ${{ inputs.yara-rules }}
         RELGATE_SARIF_FILE: ${{ inputs.sarif-file }}
@@ -115,4 +187,3 @@ runs:
           exit $EXIT_CODE
         fi
         echo "sarif-path=$RELGATE_SARIF_FILE" >> "$GITHUB_OUTPUT"
-

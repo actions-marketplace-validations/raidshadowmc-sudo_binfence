@@ -170,7 +170,9 @@ fn diff_status(diff: Option<&DiffReport>, mit: &str) -> &'static str {
 fn format_authenticode(rep: &BinaryReport) -> String {
     if let Some(ref auth) = rep.authenticode {
         match auth.status {
-            binlens::types::AuthenticodeStatus::DigestMatch => "🟢 Valid (DigestMatch)".into(),
+            binlens::types::AuthenticodeStatus::DigestMatch => {
+                "🟢 Digest Match (PE Hash Verified)".into()
+            }
             binlens::types::AuthenticodeStatus::DigestMismatch => {
                 "🔴 Tampered (DigestMismatch)".into()
             }

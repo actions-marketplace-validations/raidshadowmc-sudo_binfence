@@ -231,7 +231,12 @@ pub fn evaluate_gate(
         }
     }
 
-    // 5. Authenticode Integrity Check
+    let is_pe = matches!(
+        target_report.format,
+        types::BinaryFormat::PE32 | types::BinaryFormat::PE64
+    );
+
+    // 5. Authenticode Integrity Check (PE only)
     if let Some(ref auth) = target_report.authenticode {
         if policy.fail_on_tampered {
             match auth.status {
@@ -287,7 +292,7 @@ pub fn evaluate_gate(
                 _ => {}
             }
         }
-    } else if policy.require_authenticode {
+    } else if policy.require_authenticode && is_pe {
         findings.push(GateFinding {
             rule_id: "REL006-UNSIGNED-BINARY".to_string(),
             title: "Binary is Unsigned".to_string(),
@@ -313,13 +318,14 @@ pub fn evaluate_gate(
         );
     }
 
-    // 6. Optional Check: Control Flow Guard (CFG)
-    if policy.require_cfg && !target_report.mitigations.cfg {
+    // 6. Optional Check: Control Flow Guard (CFG, PE only)
+    if policy.require_cfg && is_pe && !target_report.mitigations.cfg {
         findings.push(GateFinding {
             rule_id: "REL009-NO-CFG".to_string(),
             title: "Control Flow Guard (CFG) Not Enabled".to_string(),
-            description: "Target binary does not have Control Flow Guard (CFG) mitigation active."
-                .to_string(),
+            description:
+                "Target Windows PE binary does not have Control Flow Guard (CFG) mitigation active."
+                    .to_string(),
             status: GateStatus::Failed,
             severity: "error".to_string(),
         });
@@ -340,7 +346,14 @@ pub fn evaluate_gate(
     }
 
     // 7. Optional Check: Stack Canary / /GS Buffer Security Check
-    if policy.require_stack_canary && !target_report.mitigations.stack_canary {
+    let supports_canary = matches!(
+        target_report.format,
+        types::BinaryFormat::PE32
+            | types::BinaryFormat::PE64
+            | types::BinaryFormat::ELF32
+            | types::BinaryFormat::ELF64
+    );
+    if policy.require_stack_canary && supports_canary && !target_report.mitigations.stack_canary {
         findings.push(GateFinding {
             rule_id: "REL010-NO-STACK-CANARY".to_string(),
             title: "Stack Canary Not Enabled".to_string(),
@@ -364,6 +377,44 @@ pub fn evaluate_gate(
             "Binary missing stack buffer protection",
             target_path,
         );
+    }
+
+    // 8. Section Additions Check
+    if let (Some(max_new), Some(d)) = (policy.max_new_sections, diff_report.as_ref()) {
+        let added_count = d
+            .section_deltas
+            .iter()
+            .filter(|s| s.action == "added")
+            .count();
+        if added_count > max_new {
+            findings.push(GateFinding {
+                rule_id: "REL011-EXCESS-NEW-SECTIONS".to_string(),
+                title: "Excessive Section Additions".to_string(),
+                description: format!(
+                    "Binary added {} new sections, exceeding allowable policy limit of {}.",
+                    added_count, max_new
+                ),
+                status: GateStatus::Failed,
+                severity: "error".to_string(),
+            });
+
+            sarif.add_rule(
+                "REL011-EXCESS-NEW-SECTIONS",
+                "ExcessiveNewSections",
+                "Added sections exceed threshold",
+                Some("Unexpected section additions can indicate packing, payload embedding, or build script tampering."),
+                "error",
+            );
+            sarif.add_result(
+                "REL011-EXCESS-NEW-SECTIONS",
+                "error",
+                &format!(
+                    "New sections ({}) > maximum allowable ({})",
+                    added_count, max_new
+                ),
+                target_path,
+            );
+        }
     }
 
     // 8. Shannon Entropy Threshold

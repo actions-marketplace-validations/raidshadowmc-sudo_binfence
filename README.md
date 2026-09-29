@@ -4,7 +4,7 @@ Binary release security gate & mitigation regression auditor for CI/CD pipelines
 
 [![CI](https://github.com/raidshadowmc-sudo/relgate/actions/workflows/ci.yml/badge.svg)](https://github.com/raidshadowmc-sudo/relgate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub Action](https://img.shields.io/badge/action-relgate%40v1-green.svg)](https://github.com/marketplace/actions/relgate)
+[![Release](https://img.shields.io/github/v/release/raidshadowmc-sudo/relgate?include_prereleases)](https://github.com/raidshadowmc-sudo/relgate/releases)
 
 `relgate` audits compiled release assets (PE, ELF, Mach-O) in CI/CD before they hit production. It guards against accidental compiler or linker regressions that strip exploit mitigations, violate `W^X` memory protection, corrupt Authenticode digests, or inject abnormal entropy.
 
@@ -40,6 +40,10 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   audit-release:
     runs-on: ubuntu-latest
@@ -50,7 +54,7 @@ jobs:
         run: cargo build --release
 
       - name: Run Binary Release Gate
-        uses: raidshadowmc-sudo/relgate@v1
+        uses: raidshadowmc-sudo/relgate@v0.1.0
         with:
           binary: target/release/my_app
           fail-on-degraded: true
@@ -65,6 +69,7 @@ jobs:
           sarif_file: relgate.sarif
 ```
 
+
 ### Comparing Against Baseline (Differential Gate)
 
 To catch regressions between consecutive releases:
@@ -76,7 +81,7 @@ To catch regressions between consecutive releases:
     GH_TOKEN: ${{ github.token }}
 
 - name: Audit Against Baseline
-  uses: raidshadowmc-sudo/relgate@v1
+  uses: raidshadowmc-sudo/relgate@v0.1.0
   with:
     binary: target/release/my_app
     baseline: old_app
@@ -111,7 +116,8 @@ To catch regressions between consecutive releases:
 `relgate` can also be run locally on your development machine:
 
 ```bash
-cargo install relgate
+# Install directly from Git repository
+cargo install --git https://github.com/raidshadowmc-sudo/relgate.git --locked
 
 # Audit binary against default security policies
 relgate --binary ./app.exe
@@ -142,9 +148,13 @@ relgate --binary ./dist/app \
 | `REL004-RWX-SECTION` | `DisallowRWXSections` | 🔴 Error | Binary contains simultaneously writable and executable sections (`W^X` violation). |
 | `REL005-AUTHENTICODE-TAMPERED` | `AuthenticodeDigestMismatch` | 🔴 Error | PE Authenticode digest does not match embedded signature, indicating binary tampering. |
 | `REL005-AUTHENTICODE-MALFORMED`| `AuthenticodeMalformed` | 🔴 Error | Embedded PKCS#7 certificate directory is corrupt or malformed. |
-| `REL006-UNSIGNED-BINARY` | `RequireAuthenticode` | 🔴 Error | Policy requires an embedded Authenticode signature, but binary is unsigned. |
-| `REL007-HIGH-ENTROPY` | `HighEntropyWarning` | ⚠️ Warning | Shannon entropy exceeds threshold (default: 7.5), signaling possible packing or hidden payload. |
+| `REL006-UNSIGNED-BINARY` | `RequireAuthenticode` | 🔴 Error | Policy requires an embedded Authenticode signature, but binary is unsigned (opt-in for PE). |
+| `REL007-HIGH-ENTROPY` | `HighEntropyWarning` | ⚠️ Warning | Shannon entropy exceeds threshold (default: 7.5), signaling possible packing or hidden payload. (Emits advisory warning; does not block release gate). |
 | `REL008-YARA-*` | `YaraSignatureMatch` | 🔴 Error | Target binary matched a prohibited YARA signature rule. |
+| `REL009-NO-CFG` | `RequireControlFlowGuard` | 🔴 Error | Policy requires Control Flow Guard (`/guard:cf`) on Windows PE binaries. |
+| `REL010-NO-STACK-CANARY` | `RequireStackCanary` | 🔴 Error | Policy requires stack smash buffer security checks (`/GS` or `-fstack-protector`). |
+| `REL011-EXCESS-NEW-SECTIONS` | `ExcessiveNewSections` | 🔴 Error | Number of newly added sections exceeds allowable threshold. |
+
 
 ---
 

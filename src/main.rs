@@ -56,6 +56,10 @@ struct Cli {
     #[arg(long, env = "RELGATE_MAX_ENTROPY")]
     max_entropy: Option<f64>,
 
+    /// Maximum number of new section additions allowed compared to baseline
+    #[arg(long, env = "RELGATE_MAX_NEW_SECTIONS")]
+    max_new_sections: Option<usize>,
+
     /// Optional path to YARA rules file (.yar, .yara) or rules directory
     #[arg(long, env = "RELGATE_YARA_RULES")]
     yara_rules: Option<String>,
@@ -86,8 +90,8 @@ fn main() {
         require_cfg: cli.require_cfg,
         require_stack_canary: cli.require_stack_canary,
         max_entropy: cli.max_entropy.or(Some(7.5)),
+        max_new_sections: cli.max_new_sections,
         yara_rules: cli.yara_rules,
-        ..Default::default()
     };
 
     let eval = match checker::evaluate_gate(&cli.binary, cli.baseline.as_deref(), &policy) {

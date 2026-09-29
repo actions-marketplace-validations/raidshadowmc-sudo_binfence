@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: relgate.exe
+            archive: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: relgate
+            archive: tar.gz
+          - os: macos-14
+            target: x86_64-apple-darwin
+            bin: relgate
+            archive: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bin: relgate
+            archive: tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $TAG = "${{ github.ref_name }}"
+          $STAGING = "staging"
+          New-Item -ItemType Directory -Path $STAGING
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" -Destination $STAGING/
+          if (Test-Path "README.md") { Copy-Item "README.md" -Destination $STAGING/ }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination $STAGING/ }
+
+          $ARCHIVE_CANONICAL = "relgate-${{ matrix.target }}.zip"
+          $ARCHIVE_TAGGED = "relgate-$TAG-${{ matrix.target }}.zip"
+
+          Compress-Archive -Path "$STAGING/*" -DestinationPath $ARCHIVE_CANONICAL
+          Copy-Item $ARCHIVE_CANONICAL -Destination $ARCHIVE_TAGGED
+
+          $HASH = (Get-FileHash -Path $ARCHIVE_CANONICAL -Algorithm SHA256).Hash.ToLower()
+          "$HASH  $ARCHIVE_CANONICAL" | Out-File -FilePath "$ARCHIVE_CANONICAL.sha256" -Encoding utf8
+
+      - name: Package artifacts (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          TAG="${{ github.ref_name }}"
+          STAGING="staging"
+          mkdir -p "$STAGING"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGING/"
+          [ -f "README.md" ] && cp "README.md" "$STAGING/"
+          [ -f "LICENSE" ] && cp "LICENSE" "$STAGING/"
+
+          ARCHIVE_CANONICAL="relgate-${{ matrix.target }}.tar.gz"
+          ARCHIVE_TAGGED="relgate-${TAG}-${{ matrix.target }}.tar.gz"
+
+          tar -czvf "$ARCHIVE_CANONICAL" -C "$STAGING" .
+          cp "$ARCHIVE_CANONICAL" "$ARCHIVE_TAGGED"
+
+          if command -v sha256sum > /dev/null; then
+            sha256sum "$ARCHIVE_CANONICAL" > "$ARCHIVE_CANONICAL.sha256"
+          else
+            shasum -a 256 "$ARCHIVE_CANONICAL" > "$ARCHIVE_CANONICAL.sha256"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            relgate-*.*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-downloads
+          merge-multiple: true
+
+      - name: Generate unified SHA256SUMS.txt
+        run: |
+          cd release-downloads
+          cat *.sha256 > SHA256SUMS.txt
+          rm -f *.sha256
+          ls -la
+
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-downloads/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

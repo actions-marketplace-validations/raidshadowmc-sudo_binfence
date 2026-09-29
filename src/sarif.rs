@@ -126,7 +126,8 @@ impl SarifLog {
                     level: default_level.to_string(),
                 },
                 help_uri: Some(
-                    "https://github.com/raidshadowmc-sudo/relgate#security-rules".to_string(),
+                    "https://github.com/raidshadowmc-sudo/relgate#security-rules-evaluated"
+                        .to_string(),
                 ),
             });
         }
