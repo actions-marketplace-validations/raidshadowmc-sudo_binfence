@@ -54,11 +54,11 @@ struct Cli {
 
     /// Maximum permissible Shannon entropy before warning/failing (default: 7.5)
     #[arg(long, env = "RELGATE_MAX_ENTROPY")]
-    max_entropy: Option<f64>,
+    max_entropy: Option<String>,
 
     /// Maximum number of new section additions allowed compared to baseline
     #[arg(long, env = "RELGATE_MAX_NEW_SECTIONS")]
-    max_new_sections: Option<usize>,
+    max_new_sections: Option<String>,
 
     /// Optional path to YARA rules file (.yar, .yara) or rules directory
     #[arg(long, env = "RELGATE_YARA_RULES")]
@@ -80,6 +80,56 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    let max_entropy = match cli
+        .max_entropy
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(s) => match s.parse::<f64>() {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!(
+                    "{}: invalid float for --max-entropy: {}",
+                    "Error".red().bold(),
+                    e
+                );
+                std::process::exit(1);
+            }
+        },
+        None => Some(7.5),
+    };
+
+    let max_new_sections = match cli
+        .max_new_sections
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(s) => match s.parse::<usize>() {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!(
+                    "{}: invalid integer for --max-new-sections: {}",
+                    "Error".red().bold(),
+                    e
+                );
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
+
+    let yara_rules = cli
+        .yara_rules
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let baseline = cli
+        .baseline
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     let policy = policy::GatePolicy {
         fail_on_degraded: cli.fail_on_degraded,
         require_aslr: cli.require_aslr,
@@ -89,12 +139,12 @@ fn main() {
         require_authenticode: cli.require_authenticode,
         require_cfg: cli.require_cfg,
         require_stack_canary: cli.require_stack_canary,
-        max_entropy: cli.max_entropy.or(Some(7.5)),
-        max_new_sections: cli.max_new_sections,
-        yara_rules: cli.yara_rules,
+        max_entropy,
+        max_new_sections,
+        yara_rules,
     };
 
-    let eval = match checker::evaluate_gate(&cli.binary, cli.baseline.as_deref(), &policy) {
+    let eval = match checker::evaluate_gate(&cli.binary, baseline.as_deref(), &policy) {
         Ok(ev) => ev,
         Err(e) => {
             eprintln!("{} {}", "Error evaluating release gate:".red().bold(), e);
@@ -215,7 +265,7 @@ fn main() {
             "══════════════════════════════════════════════════════════════════════".cyan()
         );
         println!("  Target Asset   : {}", cli.binary.bold());
-        if let Some(ref b) = cli.baseline {
+        if let Some(ref b) = baseline {
             println!("  Baseline Asset : {}", b.bold());
         }
         println!(

@@ -64,9 +64,9 @@ inputs:
     required: false
     default: 'true'
   version:
-    description: 'Release version of relgate to download (e.g. v0.1.0)'
+    description: 'Release version of relgate to download (e.g. v0.1.1)'
     required: false
-    default: 'v0.1.0'
+    default: 'v0.1.1'
 
 outputs:
   passed:
@@ -89,7 +89,7 @@ runs:
           exit 0
         fi
 
-        VERSION="${INPUT_VERSION:-v0.1.0}"
+        VERSION="${INPUT_VERSION:-v0.1.1}"
         OS="${RUNNER_OS}"
         ARCH="${RUNNER_ARCH}"
 
@@ -176,6 +176,10 @@ runs:
         if [ -n "$INPUT_BASELINE" ]; then
           ARGS+=(--baseline "$INPUT_BASELINE")
         fi
+
+        [ -z "$RELGATE_MAX_NEW_SECTIONS" ] && unset RELGATE_MAX_NEW_SECTIONS
+        [ -z "$RELGATE_YARA_RULES" ] && unset RELGATE_YARA_RULES
+        [ -z "$RELGATE_MAX_ENTROPY" ] && unset RELGATE_MAX_ENTROPY
 
         relgate "${ARGS[@]}"
         EXIT_CODE=$?
