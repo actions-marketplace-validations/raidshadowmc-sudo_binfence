@@ -1,0 +1,121 @@
+name: 'relgate'
+description: 'Binary release security gate & mitigation regression auditor for CI/CD'
+author: 'raidshadowmc-sudo'
+
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  binary:
+    description: 'Path to the compiled binary asset to audit (e.g. target/release/app or ./dist/app.exe)'
+    required: true
+  baseline:
+    description: 'Optional path to baseline binary, or release tag/asset to compare against for differential regressions'
+    required: false
+  fail-on-degraded:
+    description: 'Fail the release gate if any security mitigation degraded from baseline'
+    required: false
+    default: 'true'
+  fail-on-rwx:
+    description: 'Fail the release gate if binary contains simultaneously writable and executable (W^X violating) sections'
+    required: false
+    default: 'true'
+  fail-on-tampered:
+    description: 'Fail the release gate if Authenticode digest does not match embedded signature'
+    required: false
+    default: 'true'
+  require-aslr:
+    description: 'Require ASLR / PIE to be enabled on the target binary'
+    required: false
+    default: 'true'
+  require-dep:
+    description: 'Require DEP / NX to be enabled on the target binary'
+    required: false
+    default: 'true'
+  require-authenticode:
+    description: 'Require binary to have an embedded Authenticode signature (useful for Windows release artifacts)'
+    required: false
+    default: 'false'
+  max-entropy:
+    description: 'Maximum allowable Shannon entropy (0.0 to 8.0) before flagging an anomaly'
+    required: false
+    default: '7.5'
+  yara-rules:
+    description: 'Optional path to YARA rules file or directory to scan against'
+    required: false
+  sarif-file:
+    description: 'Output path for generated SARIF v2.1.0 security report'
+    required: false
+    default: 'relgate.sarif'
+  summary:
+    description: 'Automatically output rich Markdown report to GITHUB_STEP_SUMMARY'
+    required: false
+    default: 'true'
+
+outputs:
+  passed:
+    description: 'Whether the release gate passed all checks (true/false)'
+    value: ${{ steps.run-relgate.outputs.passed }}
+  sarif-path:
+    description: 'Path to the generated SARIF report file'
+    value: ${{ steps.run-relgate.outputs.sarif-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Ensure relgate CLI is available
+      shell: bash
+      run: |
+        if ! command -v relgate &> /dev/null; then
+          echo "relgate not found in PATH, installing via cargo..."
+          cargo install --git https://github.com/raidshadowmc-sudo/relgate.git || true
+        fi
+
+    - name: Run relgate evaluation
+      id: run-relgate
+      shell: bash
+      run: |
+        CMD="relgate --binary \"${{ inputs.binary }}\""
+        if [ -n "${{ inputs.baseline }}" ]; then
+          CMD="$CMD --baseline \"${{ inputs.baseline }}\""
+        fi
+        if [ "${{ inputs.fail-on-degraded }}" = "true" ]; then
+          CMD="$CMD --fail-on-degraded"
+        fi
+        if [ "${{ inputs.require-aslr }}" = "true" ]; then
+          CMD="$CMD --require-aslr"
+        fi
+        if [ "${{ inputs.require-dep }}" = "true" ]; then
+          CMD="$CMD --require-dep"
+        fi
+        if [ "${{ inputs.fail-on-rwx }}" = "true" ]; then
+          CMD="$CMD --disallow-rwx"
+        fi
+        if [ "${{ inputs.fail-on-tampered }}" = "true" ]; then
+          CMD="$CMD --fail-on-tampered"
+        fi
+        if [ "${{ inputs.require-authenticode }}" = "true" ]; then
+          CMD="$CMD --require-authenticode"
+        fi
+        if [ -n "${{ inputs.max-entropy }}" ]; then
+          CMD="$CMD --max-entropy \"${{ inputs.max-entropy }}\""
+        fi
+        if [ -n "${{ inputs.yara-rules }}" ]; then
+          CMD="$CMD --yara-rules \"${{ inputs.yara-rules }}\""
+        fi
+        if [ -n "${{ inputs.sarif-file }}" ]; then
+          CMD="$CMD --sarif-file \"${{ inputs.sarif-file }}\""
+        fi
+
+        echo "Executing: $CMD"
+        eval "$CMD"
+        EXIT_CODE=$?
+
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          exit $EXIT_CODE
+        fi
+        echo "sarif-path=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"

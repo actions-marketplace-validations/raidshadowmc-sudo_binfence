@@ -1,0 +1,24 @@
+[package]
+name = "relgate"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["raidshadowmc-sudo"]
+description = "Binary release security gate & regression auditor for CI/CD pipelines"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/raidshadowmc-sudo/relgate"
+keywords = ["ci-cd", "binary-gate", "checksec", "security", "sarif"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+binlens = "0.1.1"
+clap = { version = "4.6.6", features = ["derive", "env"] }
+
+colored = "3.1.1"
+memmap2 = "0.9.11"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[lints.clippy]
+collapsible_if = "allow"
