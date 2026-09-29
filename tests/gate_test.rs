@@ -115,3 +115,85 @@ fn test_evaluate_gate_detects_rwx_section() {
 
     let _ = fs::remove_file(rwx_file);
 }
+
+fn create_synthetic_elf(has_nx: bool, is_pie: bool) -> Vec<u8> {
+    let mut data = vec![0u8; 512];
+    data[0..4].copy_from_slice(b"\x7FELF");
+    data[4] = 2; // 64-bit
+    data[5] = 1; // Little-endian
+    data[6] = 1; // ELF version
+    data[7] = 0; // System V ABI
+    let e_type: u16 = if is_pie { 3 } else { 2 }; // ET_DYN or ET_EXEC
+    data[16..18].copy_from_slice(&e_type.to_le_bytes());
+    data[18..20].copy_from_slice(&62u16.to_le_bytes()); // EM_X86_64
+    data[20..24].copy_from_slice(&1u32.to_le_bytes()); // EV_CURRENT
+    data[24..32].copy_from_slice(&0x1000u64.to_le_bytes()); // e_entry
+    data[32..40].copy_from_slice(&64u64.to_le_bytes()); // e_phoff = 64
+    data[52..54].copy_from_slice(&64u16.to_le_bytes()); // e_ehsize
+    data[54..56].copy_from_slice(&56u16.to_le_bytes()); // e_phentsize
+    data[56..58].copy_from_slice(&2u16.to_le_bytes()); // e_phnum = 2
+
+    // PH 0: PT_LOAD
+    data[64..68].copy_from_slice(&1u32.to_le_bytes());
+    data[68..72].copy_from_slice(&5u32.to_le_bytes()); // PF_R | PF_X
+    data[72..80].copy_from_slice(&0u64.to_le_bytes());
+    data[80..88].copy_from_slice(&0x1000u64.to_le_bytes());
+    data[88..96].copy_from_slice(&0x1000u64.to_le_bytes());
+    data[96..104].copy_from_slice(&512u64.to_le_bytes());
+    data[104..112].copy_from_slice(&512u64.to_le_bytes());
+    data[112..120].copy_from_slice(&0x1000u64.to_le_bytes());
+
+    // PH 1: PT_GNU_STACK
+    let p_flags = if has_nx { 6u32 } else { 7u32 }; // RW vs RWX
+    let ph1 = 64 + 56;
+    data[ph1..ph1 + 4].copy_from_slice(&0x6474e551u32.to_le_bytes());
+    data[ph1 + 4..ph1 + 8].copy_from_slice(&p_flags.to_le_bytes());
+    data
+}
+
+#[test]
+fn test_evaluate_gate_on_synthetic_elf() {
+    let hardened_elf = create_synthetic_elf(true, true);
+    let target_file = "target/test_hardened.elf";
+    fs::write(target_file, &hardened_elf).expect("write hardened elf");
+
+    let policy = GatePolicy {
+        require_aslr: true,
+        require_dep: true,
+        disallow_rwx: true,
+        ..Default::default()
+    };
+
+    let eval = evaluate_gate(target_file, None, &policy).expect("evaluation should run");
+    assert!(eval.passed, "synthetic hardened ELF must pass release gate");
+    assert_eq!(eval.findings.len(), 0);
+
+    let _ = fs::remove_file(target_file);
+}
+
+#[test]
+fn test_evaluate_gate_detects_synthetic_degradation() {
+    let baseline_elf = create_synthetic_elf(true, true);
+    let degraded_elf = create_synthetic_elf(false, false);
+
+    let baseline_file = "target/test_base.elf";
+    let degraded_file = "target/test_degraded.elf";
+    fs::write(baseline_file, &baseline_elf).expect("write base elf");
+    fs::write(degraded_file, &degraded_elf).expect("write degraded elf");
+
+    let policy = GatePolicy {
+        fail_on_degraded: true,
+        require_aslr: true,
+        require_dep: true,
+        ..Default::default()
+    };
+
+    let eval =
+        evaluate_gate(degraded_file, Some(baseline_file), &policy).expect("evaluation should run");
+    assert!(!eval.passed, "degraded ELF must FAIL release gate");
+    assert!(eval.findings.iter().any(|f| f.rule_id.contains("ASLR")));
+    assert!(eval.findings.iter().any(|f| f.rule_id.contains("DEP")));
+
+    let _ = fs::remove_file(baseline_file);
+    let _ = fs::remove_file(degraded_file);
+}

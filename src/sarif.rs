@@ -86,7 +86,6 @@ impl Default for SarifLog {
 
 impl SarifLog {
     pub fn new() -> Self {
-
         Self {
             schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
             version: "2.1.0".to_string(),
