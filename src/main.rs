@@ -20,44 +20,52 @@ struct Cli {
     #[arg(long)]
     baseline: Option<String>,
 
-    /// Fail the gate if any security mitigation degraded from baseline (default: true)
-    #[arg(long, default_value_t = true)]
+    /// Fail the gate if any security mitigation degraded from baseline
+    #[arg(long, env = "RELGATE_FAIL_ON_DEGRADED", default_value_t = true, action = clap::ArgAction::Set)]
     fail_on_degraded: bool,
 
-    /// Require ASLR / PIE to be enabled on target binary (default: true)
-    #[arg(long, default_value_t = true)]
+    /// Require ASLR / PIE to be enabled on target binary
+    #[arg(long, env = "RELGATE_REQUIRE_ASLR", default_value_t = true, action = clap::ArgAction::Set)]
     require_aslr: bool,
 
-    /// Require DEP / NX to be enabled on target binary (default: true)
-    #[arg(long, default_value_t = true)]
+    /// Require DEP / NX to be enabled on target binary
+    #[arg(long, env = "RELGATE_REQUIRE_DEP", default_value_t = true, action = clap::ArgAction::Set)]
     require_dep: bool,
 
-    /// Fail if target has any simultaneously writable and executable (RWX) sections (default: true)
-    #[arg(long, default_value_t = true)]
+    /// Fail if target has any simultaneously writable and executable (RWX) sections
+    #[arg(long, env = "RELGATE_DISALLOW_RWX", default_value_t = true, action = clap::ArgAction::Set)]
     disallow_rwx: bool,
 
-    /// Fail if Authenticode signature is tampered or digest mismatches (default: true)
-    #[arg(long, default_value_t = true)]
+    /// Fail if Authenticode signature is tampered or digest mismatches
+    #[arg(long, env = "RELGATE_FAIL_ON_TAMPERED", default_value_t = true, action = clap::ArgAction::Set)]
     fail_on_tampered: bool,
 
-    /// Require binary to be signed with Authenticode (default: false)
-    #[arg(long, default_value_t = false)]
+    /// Require binary to be signed with Authenticode
+    #[arg(long, env = "RELGATE_REQUIRE_AUTHENTICODE", default_value_t = false, action = clap::ArgAction::Set)]
     require_authenticode: bool,
 
+    /// Require Control Flow Guard (CFG) on Windows PE binaries
+    #[arg(long, env = "RELGATE_REQUIRE_CFG", default_value_t = false, action = clap::ArgAction::Set)]
+    require_cfg: bool,
+
+    /// Require Stack Canary / /GS buffer security check
+    #[arg(long, env = "RELGATE_REQUIRE_STACK_CANARY", default_value_t = false, action = clap::ArgAction::Set)]
+    require_stack_canary: bool,
+
     /// Maximum permissible Shannon entropy before warning/failing (default: 7.5)
-    #[arg(long)]
+    #[arg(long, env = "RELGATE_MAX_ENTROPY")]
     max_entropy: Option<f64>,
 
     /// Optional path to YARA rules file (.yar, .yara) or rules directory
-    #[arg(long)]
+    #[arg(long, env = "RELGATE_YARA_RULES")]
     yara_rules: Option<String>,
 
     /// Output path for SARIF v2.1.0 report
-    #[arg(long, default_value = "relgate.sarif")]
+    #[arg(long, env = "RELGATE_SARIF_FILE", default_value = "relgate.sarif")]
     sarif_file: String,
 
     /// Optional output path for GitHub Step Summary markdown
-    #[arg(long)]
+    #[arg(long, env = "RELGATE_SUMMARY_FILE")]
     summary_file: Option<String>,
 
     /// Output full JSON evaluation to stdout
@@ -75,6 +83,8 @@ fn main() {
         disallow_rwx: cli.disallow_rwx,
         fail_on_tampered: cli.fail_on_tampered,
         require_authenticode: cli.require_authenticode,
+        require_cfg: cli.require_cfg,
+        require_stack_canary: cli.require_stack_canary,
         max_entropy: cli.max_entropy.or(Some(7.5)),
         yara_rules: cli.yara_rules,
         ..Default::default()
@@ -84,6 +94,47 @@ fn main() {
         Ok(ev) => ev,
         Err(e) => {
             eprintln!("{} {}", "Error evaluating release gate:".red().bold(), e);
+
+            // Emit a minimal SARIF log so CI scanners never fail on missing files
+            let mut err_sarif = relgate::sarif::SarifLog::new();
+            err_sarif.add_rule(
+                "REL000-EVAL-ERROR",
+                "EvaluationError",
+                "Release gate failed to evaluate binary",
+                Some("An I/O or parser error occurred while inspecting the target or baseline binary."),
+                "error",
+            );
+            err_sarif.add_result(
+                "REL000-EVAL-ERROR",
+                "error",
+                &format!("Evaluation error: {}", e),
+                &cli.binary,
+            );
+            if let Ok(s) = serde_json::to_string_pretty(&err_sarif) {
+                let _ = fs::write(&cli.sarif_file, s);
+            }
+
+            // Write minimal step summary
+            let summary_err = format!(
+                "### 🔴 Relgate Security Gate: **FAILED (Evaluation Error)**\n\n**Error**: {}\n\nTarget Asset: `{}`\n",
+                e, cli.binary
+            );
+            if let Some(ref path) = cli.summary_file {
+                let _ = fs::write(path, &summary_err);
+            }
+            if let Ok(github_summary_path) = std::env::var("GITHUB_STEP_SUMMARY") {
+                if !github_summary_path.is_empty() {
+                    let _ = fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&github_summary_path)
+                        .map(|mut f| {
+                            use std::io::Write;
+                            let _ = writeln!(f, "\n{}\n", summary_err);
+                        });
+                }
+            }
+
             std::process::exit(1);
         }
     };

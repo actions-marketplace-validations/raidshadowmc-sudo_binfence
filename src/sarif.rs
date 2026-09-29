@@ -78,8 +78,15 @@ pub struct SarifArtifactLocation {
     pub uri: String,
 }
 
+impl Default for SarifLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SarifLog {
     pub fn new() -> Self {
+
         Self {
             schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
             version: "2.1.0".to_string(),
@@ -127,6 +134,7 @@ impl SarifLog {
     }
 
     pub fn add_result(&mut self, rule_id: &str, level: &str, message: &str, file_uri: &str) {
+        let normalized_uri = file_uri.replace('\\', "/");
         self.runs[0].results.push(SarifResult {
             rule_id: rule_id.to_string(),
             level: level.to_string(),
@@ -136,7 +144,7 @@ impl SarifLog {
             locations: vec![SarifLocation {
                 physical_location: SarifPhysicalLocation {
                     artifact_location: SarifArtifactLocation {
-                        uri: file_uri.to_string(),
+                        uri: normalized_uri,
                     },
                 },
             }],

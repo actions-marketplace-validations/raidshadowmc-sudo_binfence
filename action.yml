@@ -37,7 +37,16 @@ inputs:
     description: 'Require binary to have an embedded Authenticode signature (useful for Windows release artifacts)'
     required: false
     default: 'false'
+  require-cfg:
+    description: 'Require Control Flow Guard (CFG) on Windows PE binaries'
+    required: false
+    default: 'false'
+  require-stack-canary:
+    description: 'Require Stack Canary / /GS buffer security check'
+    required: false
+    default: 'false'
   max-entropy:
+
     description: 'Maximum allowable Shannon entropy (0.0 to 8.0) before flagging an anomaly'
     required: false
     default: '7.5'
@@ -75,41 +84,28 @@ runs:
     - name: Run relgate evaluation
       id: run-relgate
       shell: bash
+      env:
+        INPUT_BINARY: ${{ inputs.binary }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        RELGATE_FAIL_ON_DEGRADED: ${{ inputs.fail-on-degraded }}
+        RELGATE_REQUIRE_ASLR: ${{ inputs.require-aslr }}
+        RELGATE_REQUIRE_DEP: ${{ inputs.require-dep }}
+        RELGATE_DISALLOW_RWX: ${{ inputs.fail-on-rwx }}
+        RELGATE_FAIL_ON_TAMPERED: ${{ inputs.fail-on-tampered }}
+        RELGATE_REQUIRE_AUTHENTICODE: ${{ inputs.require-authenticode }}
+        RELGATE_REQUIRE_CFG: ${{ inputs.require-cfg }}
+        RELGATE_REQUIRE_STACK_CANARY: ${{ inputs.require-stack-canary }}
+        RELGATE_MAX_ENTROPY: ${{ inputs.max-entropy }}
+        RELGATE_YARA_RULES: ${{ inputs.yara-rules }}
+        RELGATE_SARIF_FILE: ${{ inputs.sarif-file }}
+
       run: |
-        CMD="relgate --binary \"${{ inputs.binary }}\""
-        if [ -n "${{ inputs.baseline }}" ]; then
-          CMD="$CMD --baseline \"${{ inputs.baseline }}\""
-        fi
-        if [ "${{ inputs.fail-on-degraded }}" = "true" ]; then
-          CMD="$CMD --fail-on-degraded"
-        fi
-        if [ "${{ inputs.require-aslr }}" = "true" ]; then
-          CMD="$CMD --require-aslr"
-        fi
-        if [ "${{ inputs.require-dep }}" = "true" ]; then
-          CMD="$CMD --require-dep"
-        fi
-        if [ "${{ inputs.fail-on-rwx }}" = "true" ]; then
-          CMD="$CMD --disallow-rwx"
-        fi
-        if [ "${{ inputs.fail-on-tampered }}" = "true" ]; then
-          CMD="$CMD --fail-on-tampered"
-        fi
-        if [ "${{ inputs.require-authenticode }}" = "true" ]; then
-          CMD="$CMD --require-authenticode"
-        fi
-        if [ -n "${{ inputs.max-entropy }}" ]; then
-          CMD="$CMD --max-entropy \"${{ inputs.max-entropy }}\""
-        fi
-        if [ -n "${{ inputs.yara-rules }}" ]; then
-          CMD="$CMD --yara-rules \"${{ inputs.yara-rules }}\""
-        fi
-        if [ -n "${{ inputs.sarif-file }}" ]; then
-          CMD="$CMD --sarif-file \"${{ inputs.sarif-file }}\""
+        ARGS=(--binary "$INPUT_BINARY")
+        if [ -n "$INPUT_BASELINE" ]; then
+          ARGS+=(--baseline "$INPUT_BASELINE")
         fi
 
-        echo "Executing: $CMD"
-        eval "$CMD"
+        relgate "${ARGS[@]}"
         EXIT_CODE=$?
 
         if [ $EXIT_CODE -eq 0 ]; then
@@ -118,4 +114,5 @@ runs:
           echo "passed=false" >> "$GITHUB_OUTPUT"
           exit $EXIT_CODE
         fi
-        echo "sarif-path=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"
+        echo "sarif-path=$RELGATE_SARIF_FILE" >> "$GITHUB_OUTPUT"
+

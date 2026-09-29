@@ -92,8 +92,21 @@ pub fn evaluate_gate(
         if let Some(ref d) = diff_report {
             for m in &d.mitigations_drift {
                 if m.status == "degraded" {
+                    let sanitized_name: String = m
+                        .mitigation
+                        .chars()
+                        .map(|c| {
+                            if c.is_alphanumeric() {
+                                c.to_ascii_uppercase()
+                            } else {
+                                '-'
+                            }
+                        })
+                        .collect();
+                    let rule_id = format!("REL001-{}", sanitized_name.trim_matches('-'));
+
                     findings.push(GateFinding {
-                        rule_id: format!("REL001-{}", m.mitigation.to_uppercase()),
+                        rule_id: rule_id.clone(),
                         title: format!("Mitigation Degraded: {}", m.mitigation),
                         description: format!(
                             "Security mitigation '{}' was enabled in baseline but was stripped or disabled in target.",
@@ -104,14 +117,14 @@ pub fn evaluate_gate(
                     });
 
                     sarif.add_rule(
-                        &format!("REL001-{}", m.mitigation.to_uppercase()),
+                        &rule_id,
                         "SecurityMitigationDegraded",
                         &format!("Security mitigation '{}' degraded", m.mitigation),
                         Some("A security hardening mitigation was active in the baseline binary but is missing in the new build."),
                         "error",
                     );
                     sarif.add_result(
-                        &format!("REL001-{}", m.mitigation.to_uppercase()),
+                        &rule_id,
                         "error",
                         &format!(
                             "Mitigation '{}' degraded from enabled to disabled",
@@ -300,7 +313,60 @@ pub fn evaluate_gate(
         );
     }
 
-    // 6. Shannon Entropy Threshold
+    // 6. Optional Check: Control Flow Guard (CFG)
+    if policy.require_cfg && !target_report.mitigations.cfg {
+        findings.push(GateFinding {
+            rule_id: "REL009-NO-CFG".to_string(),
+            title: "Control Flow Guard (CFG) Not Enabled".to_string(),
+            description: "Target binary does not have Control Flow Guard (CFG) mitigation active."
+                .to_string(),
+            status: GateStatus::Failed,
+            severity: "error".to_string(),
+        });
+
+        sarif.add_rule(
+            "REL009-NO-CFG",
+            "RequireControlFlowGuard",
+            "Control Flow Guard mitigation is missing",
+            Some("Binaries must be compiled with /guard:cf to protect indirect call targets."),
+            "error",
+        );
+        sarif.add_result(
+            "REL009-NO-CFG",
+            "error",
+            "Binary missing Control Flow Guard protection",
+            target_path,
+        );
+    }
+
+    // 7. Optional Check: Stack Canary / /GS Buffer Security Check
+    if policy.require_stack_canary && !target_report.mitigations.stack_canary {
+        findings.push(GateFinding {
+            rule_id: "REL010-NO-STACK-CANARY".to_string(),
+            title: "Stack Canary Not Enabled".to_string(),
+            description:
+                "Target binary does not contain stack smash protection (/GS or __stack_chk_fail)."
+                    .to_string(),
+            status: GateStatus::Failed,
+            severity: "error".to_string(),
+        });
+
+        sarif.add_rule(
+            "REL010-NO-STACK-CANARY",
+            "RequireStackCanary",
+            "Stack smash protection is missing",
+            Some("Binaries must be compiled with stack buffer security checks (-fstack-protector or /GS)."),
+            "error",
+        );
+        sarif.add_result(
+            "REL010-NO-STACK-CANARY",
+            "error",
+            "Binary missing stack buffer protection",
+            target_path,
+        );
+    }
+
+    // 8. Shannon Entropy Threshold
     if let Some(max_ent) = policy.max_entropy {
         if target_report.overall_entropy > max_ent {
             findings.push(GateFinding {
