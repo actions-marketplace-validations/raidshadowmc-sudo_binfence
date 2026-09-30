@@ -58,6 +58,9 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      - name: Self-audit Release Gate (relgate on relgate)
+        run: cargo run --release --locked -- --binary "target/${{ matrix.target }}/release/${{ matrix.bin }}" --fail-on-rwx --require-aslr --require-dep
+
       - name: Package artifacts (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
