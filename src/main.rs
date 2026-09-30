@@ -9,7 +9,7 @@ use relgate::summary;
 #[derive(Parser, Debug)]
 #[command(name = "relgate")]
 #[command(author = "raidshadowmc-sudo")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Binary release security gate & mitigation regression auditor for CI/CD")]
 struct Cli {
     /// Path to the compiled target binary to audit
@@ -21,35 +21,35 @@ struct Cli {
     baseline: Option<String>,
 
     /// Fail the gate if any security mitigation degraded from baseline
-    #[arg(long, env = "RELGATE_FAIL_ON_DEGRADED", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_FAIL_ON_DEGRADED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     fail_on_degraded: bool,
 
     /// Require ASLR / PIE to be enabled on target binary
-    #[arg(long, env = "RELGATE_REQUIRE_ASLR", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_REQUIRE_ASLR", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_aslr: bool,
 
     /// Require DEP / NX to be enabled on target binary
-    #[arg(long, env = "RELGATE_REQUIRE_DEP", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_REQUIRE_DEP", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_dep: bool,
 
     /// Fail if target has any simultaneously writable and executable (RWX) sections
-    #[arg(long, env = "RELGATE_DISALLOW_RWX", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, alias = "fail-on-rwx", env = "RELGATE_DISALLOW_RWX", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     disallow_rwx: bool,
 
     /// Fail if Authenticode signature is tampered or digest mismatches
-    #[arg(long, env = "RELGATE_FAIL_ON_TAMPERED", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_FAIL_ON_TAMPERED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     fail_on_tampered: bool,
 
     /// Require binary to be signed with Authenticode
-    #[arg(long, env = "RELGATE_REQUIRE_AUTHENTICODE", default_value_t = false, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_REQUIRE_AUTHENTICODE", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_authenticode: bool,
 
     /// Require Control Flow Guard (CFG) on Windows PE binaries
-    #[arg(long, env = "RELGATE_REQUIRE_CFG", default_value_t = false, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_REQUIRE_CFG", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_cfg: bool,
 
     /// Require Stack Canary / /GS buffer security check
-    #[arg(long, env = "RELGATE_REQUIRE_STACK_CANARY", default_value_t = false, action = clap::ArgAction::Set)]
+    #[arg(long, env = "RELGATE_REQUIRE_STACK_CANARY", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_stack_canary: bool,
 
     /// Maximum permissible Shannon entropy before warning/failing (default: 7.5)
@@ -71,6 +71,10 @@ struct Cli {
     /// Optional output path for GitHub Step Summary markdown
     #[arg(long, env = "RELGATE_SUMMARY_FILE")]
     summary_file: Option<String>,
+
+    /// Automatically output rich Markdown report to GITHUB_STEP_SUMMARY
+    #[arg(long, env = "RELGATE_SUMMARY", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    summary: bool,
 
     /// Output full JSON evaluation to stdout
     #[arg(long)]
@@ -218,16 +222,18 @@ fn main() {
     if let Some(ref path) = cli.summary_file {
         let _ = fs::write(path, &summary_md);
     }
-    if let Ok(github_summary_path) = std::env::var("GITHUB_STEP_SUMMARY") {
-        if !github_summary_path.is_empty() {
-            let _ = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&github_summary_path)
-                .map(|mut f| {
-                    use std::io::Write;
-                    let _ = writeln!(f, "\n{}\n", summary_md);
-                });
+    if cli.summary {
+        if let Ok(github_summary_path) = std::env::var("GITHUB_STEP_SUMMARY") {
+            if !github_summary_path.is_empty() {
+                let _ = fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&github_summary_path)
+                    .map(|mut f| {
+                        use std::io::Write;
+                        let _ = writeln!(f, "\n{}\n", summary_md);
+                    });
+            }
         }
     }
 

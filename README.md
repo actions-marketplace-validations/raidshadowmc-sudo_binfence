@@ -54,7 +54,7 @@ jobs:
         run: cargo build --release
 
       - name: Run Binary Release Gate
-        uses: raidshadowmc-sudo/relgate@v0.1.1
+        uses: raidshadowmc-sudo/relgate@v0.1.2
         with:
           binary: target/release/my_app
           fail-on-degraded: true
@@ -81,7 +81,7 @@ To catch regressions between consecutive releases:
     GH_TOKEN: ${{ github.token }}
 
 - name: Audit Against Baseline
-  uses: raidshadowmc-sudo/relgate@v0.1.1
+  uses: raidshadowmc-sudo/relgate@v0.1.2
   with:
     binary: target/release/my_app
     baseline: old_app

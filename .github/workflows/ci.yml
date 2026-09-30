@@ -30,7 +30,16 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Run test suite
         run: cargo test --verbose
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Self-audit Release Gate (relgate on relgate)
+        shell: bash
+        run: |
+          TARGET_BIN="${{ matrix.os == 'windows-latest' && 'target/release/relgate.exe' || 'target/release/relgate' }}"
+          cargo run --release --locked -- --binary "$TARGET_BIN" --fail-on-rwx --require-aslr --require-dep

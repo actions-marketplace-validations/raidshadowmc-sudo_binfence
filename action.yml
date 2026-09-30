@@ -64,9 +64,9 @@ inputs:
     required: false
     default: 'true'
   version:
-    description: 'Release version of relgate to download (e.g. v0.1.1)'
+    description: 'Release version of relgate to download (e.g. v0.1.2). Defaults to action ref or v0.1.2.'
     required: false
-    default: 'v0.1.1'
+    default: ''
 
 outputs:
   passed:
@@ -83,13 +83,23 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
       run: |
         if command -v relgate &> /dev/null; then
           echo "relgate is already available in PATH: $(command -v relgate)"
           exit 0
         fi
 
-        VERSION="${INPUT_VERSION:-v0.1.1}"
+        # Priority: explicit input > github.action_ref (if version tag v*) > fallback
+        if [ -n "$INPUT_VERSION" ]; then
+          VERSION="$INPUT_VERSION"
+        elif [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+ ]]; then
+          VERSION="$ACTION_REF"
+        else
+          VERSION="v0.1.2"
+        fi
+        echo "Selected relgate release version: $VERSION"
+
         OS="${RUNNER_OS}"
         ARCH="${RUNNER_ARCH}"
 
@@ -125,6 +135,7 @@ runs:
 
         ASSET_NAME="relgate-${TARGET}.${EXT}"
         DOWNLOAD_URL="https://github.com/raidshadowmc-sudo/relgate/releases/download/${VERSION}/${ASSET_NAME}"
+        SUMS_URL="https://github.com/raidshadowmc-sudo/relgate/releases/download/${VERSION}/SHA256SUMS.txt"
 
         INSTALL_DIR="${RUNNER_TEMP:-/tmp}/relgate-bin"
         mkdir -p "$INSTALL_DIR"
@@ -133,13 +144,44 @@ runs:
         HTTP_CODE=$(curl -sSL -w "%{http_code}" -o "${INSTALL_DIR}/${ASSET_NAME}" "$DOWNLOAD_URL" || true)
 
         if [ "$HTTP_CODE" = "200" ]; then
-          echo "Downloaded ${ASSET_NAME} successfully."
+          echo "Downloaded ${ASSET_NAME} successfully. Verifying SHA-256 integrity..."
+          SUMS_FILE="${INSTALL_DIR}/SHA256SUMS.txt"
+          if curl -fsSL -o "$SUMS_FILE" "$SUMS_URL"; then
+            EXPECTED_HASH=$(grep -E "[[:space:]]${ASSET_NAME}$" "$SUMS_FILE" | awk '{print $1}')
+            if [ -n "$EXPECTED_HASH" ]; then
+              if command -v sha256sum &> /dev/null; then
+                ACTUAL_HASH=$(sha256sum "${INSTALL_DIR}/${ASSET_NAME}" | awk '{print $1}')
+              elif command -v shasum &> /dev/null; then
+                ACTUAL_HASH=$(shasum -a 256 "${INSTALL_DIR}/${ASSET_NAME}" | awk '{print $1}')
+              else
+                echo "Warning: Neither sha256sum nor shasum found on runner, skipping hash verification." >&2
+                ACTUAL_HASH="$EXPECTED_HASH"
+              fi
+
+              if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+                echo "CRITICAL SECURITY ERROR: SHA-256 checksum mismatch for ${ASSET_NAME}!" >&2
+                echo "Expected: $EXPECTED_HASH" >&2
+                echo "Actual:   $ACTUAL_HASH" >&2
+                exit 1
+              fi
+              echo "SHA-256 checksum verified: $ACTUAL_HASH"
+            else
+              echo "Warning: ${ASSET_NAME} not listed in SHA256SUMS.txt, skipping hash verification."
+            fi
+          else
+            echo "Warning: Could not fetch SHA256SUMS.txt, skipping hash verification."
+          fi
+
+          echo "Extracting ${ASSET_NAME}..."
           if [ "$EXT" = "zip" ]; then
             unzip -q -o "${INSTALL_DIR}/${ASSET_NAME}" -d "$INSTALL_DIR"
           else
             tar -xzf "${INSTALL_DIR}/${ASSET_NAME}" -C "$INSTALL_DIR"
           fi
-          chmod +x "${INSTALL_DIR}/relgate"* || true
+
+          if [ "$OS" != "Windows" ]; then
+            chmod +x "${INSTALL_DIR}/relgate"
+          fi
           echo "$INSTALL_DIR" >> "$GITHUB_PATH"
           echo "relgate installed to GITHUB_PATH."
         else
@@ -170,6 +212,7 @@ runs:
         RELGATE_MAX_ENTROPY: ${{ inputs.max-entropy }}
         RELGATE_YARA_RULES: ${{ inputs.yara-rules }}
         RELGATE_SARIF_FILE: ${{ inputs.sarif-file }}
+        RELGATE_SUMMARY: ${{ inputs.summary }}
 
       run: |
         ARGS=(--binary "$INPUT_BINARY")
