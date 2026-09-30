@@ -3,6 +3,7 @@
 Binary release security gate & mitigation regression auditor for CI/CD pipelines.
 
 [![CI](https://github.com/raidshadowmc-sudo/binfence/actions/workflows/ci.yml/badge.svg)](https://github.com/raidshadowmc-sudo/binfence/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/binfence.svg)](https://crates.io/crates/binfence)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/raidshadowmc-sudo/binfence?include_prereleases)](https://github.com/raidshadowmc-sudo/binfence/releases)
 
@@ -115,7 +116,10 @@ To catch regressions between consecutive releases:
 `binfence` can also be run locally on your development machine:
 
 ```bash
-# Install directly from Git repository
+# Install from crates.io
+cargo install binfence --locked
+
+# Or directly from Git repository
 cargo install --git https://github.com/raidshadowmc-sudo/binfence.git --locked
 
 # Audit binary against default security policies
