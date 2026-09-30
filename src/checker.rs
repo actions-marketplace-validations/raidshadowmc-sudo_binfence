@@ -103,7 +103,7 @@ pub fn evaluate_gate(
                             }
                         })
                         .collect();
-                    let rule_id = format!("REL001-{}", sanitized_name.trim_matches('-'));
+                    let rule_id = format!("BIN001-{}", sanitized_name.trim_matches('-'));
 
                     findings.push(GateFinding {
                         rule_id: rule_id.clone(),
@@ -142,7 +142,7 @@ pub fn evaluate_gate(
         let aslr_ok = target_report.mitigations.aslr || target_report.mitigations.pie;
         if !aslr_ok {
             findings.push(GateFinding {
-                rule_id: "REL002-NO-ASLR".to_string(),
+                rule_id: "BIN002-NO-ASLR".to_string(),
                 title: "ASLR / PIE Not Enabled".to_string(),
                 description: "Target binary was compiled without Address Space Layout Randomization (ASLR / PIE)."
                     .to_string(),
@@ -151,14 +151,14 @@ pub fn evaluate_gate(
             });
 
             sarif.add_rule(
-                "REL002-NO-ASLR",
+                "BIN002-NO-ASLR",
                 "RequireASLR",
                 "ASLR or PIE mitigation is missing",
                 Some("Binaries must be linked with dynamic base / PIE enabled to randomize memory layout."),
                 "error",
             );
             sarif.add_result(
-                "REL002-NO-ASLR",
+                "BIN002-NO-ASLR",
                 "error",
                 "Binary missing ASLR/PIE mitigation",
                 target_path,
@@ -170,7 +170,7 @@ pub fn evaluate_gate(
     if policy.require_dep {
         if !target_report.mitigations.dep_nx {
             findings.push(GateFinding {
-                rule_id: "REL003-NO-DEP".to_string(),
+                rule_id: "BIN003-NO-DEP".to_string(),
                 title: "DEP / NX Not Enabled".to_string(),
                 description: "Target binary does not enforce Data Execution Prevention / No-Execute stack protection."
                     .to_string(),
@@ -179,14 +179,14 @@ pub fn evaluate_gate(
             });
 
             sarif.add_rule(
-                "REL003-NO-DEP",
+                "BIN003-NO-DEP",
                 "RequireDEP",
                 "DEP/NX mitigation is missing",
                 Some("Binaries must enable NX_COMPAT or PT_GNU_STACK non-executable stack protection."),
                 "error",
             );
             sarif.add_result(
-                "REL003-NO-DEP",
+                "BIN003-NO-DEP",
                 "error",
                 "Binary missing DEP/NX non-executable memory protection",
                 target_path,
@@ -205,7 +205,7 @@ pub fn evaluate_gate(
                 .collect();
 
             findings.push(GateFinding {
-                rule_id: "REL004-RWX-SECTION".to_string(),
+                rule_id: "BIN004-RWX-SECTION".to_string(),
                 title: "W^X Violation: RWX Section Present".to_string(),
                 description: format!(
                     "Binary contains simultaneously writable and executable sections: [{}]",
@@ -216,14 +216,14 @@ pub fn evaluate_gate(
             });
 
             sarif.add_rule(
-                "REL004-RWX-SECTION",
+                "BIN004-RWX-SECTION",
                 "DisallowRWXSections",
                 "Simultaneously writable and executable section detected",
                 Some("Writable and executable (RWX) sections violate W^X policy and introduce severe code injection risks."),
                 "error",
             );
             sarif.add_result(
-                "REL004-RWX-SECTION",
+                "BIN004-RWX-SECTION",
                 "error",
                 &format!("RWX section detected: {}", rwx_names.join(", ")),
                 target_path,
@@ -242,7 +242,7 @@ pub fn evaluate_gate(
             match auth.status {
                 types::AuthenticodeStatus::DigestMismatch => {
                     findings.push(GateFinding {
-                        rule_id: "REL005-AUTHENTICODE-TAMPERED".to_string(),
+                        rule_id: "BIN005-AUTHENTICODE-TAMPERED".to_string(),
                         title: "Authenticode Digest Mismatch (Tampering Detected)".to_string(),
                         description: format!(
                             "Calculated {} digest ({}) does not match SpcIndirectDataContent digest ({})",
@@ -253,14 +253,14 @@ pub fn evaluate_gate(
                     });
 
                     sarif.add_rule(
-                        "REL005-AUTHENTICODE-TAMPERED",
+                        "BIN005-AUTHENTICODE-TAMPERED",
                         "AuthenticodeDigestMismatch",
                         "Binary Authenticode digest does not match embedded signature",
                         Some("The PE image hash does not match the embedded PKCS#7 SpcIndirectDataContent digest, indicating tampering."),
                         "error",
                     );
                     sarif.add_result(
-                        "REL005-AUTHENTICODE-TAMPERED",
+                        "BIN005-AUTHENTICODE-TAMPERED",
                         "error",
                         "Authenticode digest mismatch: image has been tampered with or modified post-signing",
                         target_path,
@@ -268,7 +268,7 @@ pub fn evaluate_gate(
                 }
                 types::AuthenticodeStatus::Malformed => {
                     findings.push(GateFinding {
-                        rule_id: "REL005-AUTHENTICODE-MALFORMED".to_string(),
+                        rule_id: "BIN005-AUTHENTICODE-MALFORMED".to_string(),
                         title: "Authenticode Structure Malformed".to_string(),
                         description: "Embedded PKCS#7 Authenticode structure is corrupt or failed ASN.1 DER decoding.".to_string(),
                         status: GateStatus::Failed,
@@ -276,14 +276,14 @@ pub fn evaluate_gate(
                     });
 
                     sarif.add_rule(
-                        "REL005-AUTHENTICODE-MALFORMED",
+                        "BIN005-AUTHENTICODE-MALFORMED",
                         "AuthenticodeMalformed",
                         "Authenticode certificate structure is malformed",
                         Some("ASN.1 DER parsing failed on embedded certificate table."),
                         "error",
                     );
                     sarif.add_result(
-                        "REL005-AUTHENTICODE-MALFORMED",
+                        "BIN005-AUTHENTICODE-MALFORMED",
                         "error",
                         "Malformed Authenticode ASN.1 structure",
                         target_path,
@@ -294,7 +294,7 @@ pub fn evaluate_gate(
         }
     } else if policy.require_authenticode && is_pe {
         findings.push(GateFinding {
-            rule_id: "REL006-UNSIGNED-BINARY".to_string(),
+            rule_id: "BIN006-UNSIGNED-BINARY".to_string(),
             title: "Binary is Unsigned".to_string(),
             description: "Policy requires a valid Authenticode signature, but binary has no embedded signature.".to_string(),
             status: GateStatus::Failed,
@@ -302,7 +302,7 @@ pub fn evaluate_gate(
         });
 
         sarif.add_rule(
-            "REL006-UNSIGNED-BINARY",
+            "BIN006-UNSIGNED-BINARY",
             "RequireAuthenticode",
             "Binary is not signed",
             Some(
@@ -311,7 +311,7 @@ pub fn evaluate_gate(
             "error",
         );
         sarif.add_result(
-            "REL006-UNSIGNED-BINARY",
+            "BIN006-UNSIGNED-BINARY",
             "error",
             "Artifact is missing an Authenticode signature",
             target_path,
@@ -321,7 +321,7 @@ pub fn evaluate_gate(
     // 6. Optional Check: Control Flow Guard (CFG, PE only)
     if policy.require_cfg && is_pe && !target_report.mitigations.cfg {
         findings.push(GateFinding {
-            rule_id: "REL009-NO-CFG".to_string(),
+            rule_id: "BIN009-NO-CFG".to_string(),
             title: "Control Flow Guard (CFG) Not Enabled".to_string(),
             description:
                 "Target Windows PE binary does not have Control Flow Guard (CFG) mitigation active."
@@ -331,14 +331,14 @@ pub fn evaluate_gate(
         });
 
         sarif.add_rule(
-            "REL009-NO-CFG",
+            "BIN009-NO-CFG",
             "RequireControlFlowGuard",
             "Control Flow Guard mitigation is missing",
             Some("Binaries must be compiled with /guard:cf to protect indirect call targets."),
             "error",
         );
         sarif.add_result(
-            "REL009-NO-CFG",
+            "BIN009-NO-CFG",
             "error",
             "Binary missing Control Flow Guard protection",
             target_path,
@@ -355,7 +355,7 @@ pub fn evaluate_gate(
     );
     if policy.require_stack_canary && supports_canary && !target_report.mitigations.stack_canary {
         findings.push(GateFinding {
-            rule_id: "REL010-NO-STACK-CANARY".to_string(),
+            rule_id: "BIN010-NO-STACK-CANARY".to_string(),
             title: "Stack Canary Not Enabled".to_string(),
             description:
                 "Target binary does not contain stack smash protection (/GS or __stack_chk_fail)."
@@ -365,14 +365,14 @@ pub fn evaluate_gate(
         });
 
         sarif.add_rule(
-            "REL010-NO-STACK-CANARY",
+            "BIN010-NO-STACK-CANARY",
             "RequireStackCanary",
             "Stack smash protection is missing",
             Some("Binaries must be compiled with stack buffer security checks (-fstack-protector or /GS)."),
             "error",
         );
         sarif.add_result(
-            "REL010-NO-STACK-CANARY",
+            "BIN010-NO-STACK-CANARY",
             "error",
             "Binary missing stack buffer protection",
             target_path,
@@ -388,7 +388,7 @@ pub fn evaluate_gate(
             .count();
         if added_count > max_new {
             findings.push(GateFinding {
-                rule_id: "REL011-EXCESS-NEW-SECTIONS".to_string(),
+                rule_id: "BIN011-EXCESS-NEW-SECTIONS".to_string(),
                 title: "Excessive Section Additions".to_string(),
                 description: format!(
                     "Binary added {} new sections, exceeding allowable policy limit of {}.",
@@ -399,14 +399,14 @@ pub fn evaluate_gate(
             });
 
             sarif.add_rule(
-                "REL011-EXCESS-NEW-SECTIONS",
+                "BIN011-EXCESS-NEW-SECTIONS",
                 "ExcessiveNewSections",
                 "Added sections exceed threshold",
                 Some("Unexpected section additions can indicate packing, payload embedding, or build script tampering."),
                 "error",
             );
             sarif.add_result(
-                "REL011-EXCESS-NEW-SECTIONS",
+                "BIN011-EXCESS-NEW-SECTIONS",
                 "error",
                 &format!(
                     "New sections ({}) > maximum allowable ({})",
@@ -421,7 +421,7 @@ pub fn evaluate_gate(
     if let Some(max_ent) = policy.max_entropy {
         if target_report.overall_entropy > max_ent {
             findings.push(GateFinding {
-                rule_id: "REL007-HIGH-ENTROPY".to_string(),
+                rule_id: "BIN007-HIGH-ENTROPY".to_string(),
                 title: "Abnormally High Shannon Entropy".to_string(),
                 description: format!(
                     "Overall binary entropy ({:.3}) exceeds allowable threshold ({:.3}). Possible unexpected packing or crypto payload.",
@@ -432,14 +432,14 @@ pub fn evaluate_gate(
             });
 
             sarif.add_rule(
-                "REL007-HIGH-ENTROPY",
+                "BIN007-HIGH-ENTROPY",
                 "HighEntropyWarning",
                 "Binary entropy exceeds threshold",
                 Some("High entropy across the binary can signify unexpected compression, packing, or encryption."),
                 "warning",
             );
             sarif.add_result(
-                "REL007-HIGH-ENTROPY",
+                "BIN007-HIGH-ENTROPY",
                 "warning",
                 &format!(
                     "Overall entropy {:.3} > threshold {:.3}",
@@ -459,7 +459,7 @@ pub fn evaluate_gate(
                 if let Ok(yara_matches) = yara::scan_bytes_with_scanner(data, &scanner) {
                     for m in yara_matches.rules_matched {
                         findings.push(GateFinding {
-                            rule_id: format!("REL008-YARA-{}", m.name),
+                            rule_id: format!("BIN008-YARA-{}", m.name),
                             title: format!("YARA Rule Match: {}", m.name),
                             description: format!(
                                 "Binary matched YARA rule '{}' with {} string match instances.",
@@ -471,14 +471,14 @@ pub fn evaluate_gate(
                         });
 
                         sarif.add_rule(
-                            &format!("REL008-YARA-{}", m.name),
+                            &format!("BIN008-YARA-{}", m.name),
                             "YaraSignatureMatch",
                             &format!("Binary matched YARA rule {}", m.name),
                             Some("A prohibited pattern or signature was identified by the YARA scanning engine."),
                             "error",
                         );
                         sarif.add_result(
-                            &format!("REL008-YARA-{}", m.name),
+                            &format!("BIN008-YARA-{}", m.name),
                             "error",
                             &format!("Matched signature rule {}", m.name),
                             target_path,

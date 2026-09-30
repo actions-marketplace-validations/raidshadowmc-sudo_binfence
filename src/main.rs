@@ -2,12 +2,12 @@ use clap::Parser;
 use colored::*;
 use std::fs;
 
-use relgate::checker;
-use relgate::policy;
-use relgate::summary;
+use binfence::checker;
+use binfence::policy;
+use binfence::summary;
 
 #[derive(Parser, Debug)]
-#[command(name = "relgate")]
+#[command(name = "binfence")]
 #[command(author = "raidshadowmc-sudo")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Binary release security gate & mitigation regression auditor for CI/CD")]
@@ -21,59 +21,59 @@ struct Cli {
     baseline: Option<String>,
 
     /// Fail the gate if any security mitigation degraded from baseline
-    #[arg(long, env = "RELGATE_FAIL_ON_DEGRADED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_FAIL_ON_DEGRADED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     fail_on_degraded: bool,
 
     /// Require ASLR / PIE to be enabled on target binary
-    #[arg(long, env = "RELGATE_REQUIRE_ASLR", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_REQUIRE_ASLR", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_aslr: bool,
 
     /// Require DEP / NX to be enabled on target binary
-    #[arg(long, env = "RELGATE_REQUIRE_DEP", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_REQUIRE_DEP", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_dep: bool,
 
     /// Fail if target has any simultaneously writable and executable (RWX) sections
-    #[arg(long, alias = "fail-on-rwx", env = "RELGATE_DISALLOW_RWX", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, alias = "fail-on-rwx", env = "BINFENCE_DISALLOW_RWX", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     disallow_rwx: bool,
 
     /// Fail if Authenticode signature is tampered or digest mismatches
-    #[arg(long, env = "RELGATE_FAIL_ON_TAMPERED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_FAIL_ON_TAMPERED", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     fail_on_tampered: bool,
 
     /// Require binary to be signed with Authenticode
-    #[arg(long, env = "RELGATE_REQUIRE_AUTHENTICODE", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_REQUIRE_AUTHENTICODE", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_authenticode: bool,
 
     /// Require Control Flow Guard (CFG) on Windows PE binaries
-    #[arg(long, env = "RELGATE_REQUIRE_CFG", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_REQUIRE_CFG", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_cfg: bool,
 
     /// Require Stack Canary / /GS buffer security check
-    #[arg(long, env = "RELGATE_REQUIRE_STACK_CANARY", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_REQUIRE_STACK_CANARY", default_value_t = false, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     require_stack_canary: bool,
 
     /// Maximum permissible Shannon entropy before warning/failing (default: 7.5)
-    #[arg(long, env = "RELGATE_MAX_ENTROPY")]
+    #[arg(long, env = "BINFENCE_MAX_ENTROPY")]
     max_entropy: Option<String>,
 
     /// Maximum number of new section additions allowed compared to baseline
-    #[arg(long, env = "RELGATE_MAX_NEW_SECTIONS")]
+    #[arg(long, env = "BINFENCE_MAX_NEW_SECTIONS")]
     max_new_sections: Option<String>,
 
     /// Optional path to YARA rules file (.yar, .yara) or rules directory
-    #[arg(long, env = "RELGATE_YARA_RULES")]
+    #[arg(long, env = "BINFENCE_YARA_RULES")]
     yara_rules: Option<String>,
 
     /// Output path for SARIF v2.1.0 report
-    #[arg(long, env = "RELGATE_SARIF_FILE", default_value = "relgate.sarif")]
+    #[arg(long, env = "BINFENCE_SARIF_FILE", default_value = "binfence.sarif")]
     sarif_file: String,
 
     /// Optional output path for GitHub Step Summary markdown
-    #[arg(long, env = "RELGATE_SUMMARY_FILE")]
+    #[arg(long, env = "BINFENCE_SUMMARY_FILE")]
     summary_file: Option<String>,
 
     /// Automatically output rich Markdown report to GITHUB_STEP_SUMMARY
-    #[arg(long, env = "RELGATE_SUMMARY", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
+    #[arg(long, env = "BINFENCE_SUMMARY", default_value_t = true, num_args = 0..=1, default_missing_value = "true", action = clap::ArgAction::Set)]
     summary: bool,
 
     /// Output full JSON evaluation to stdout
@@ -154,16 +154,16 @@ fn main() {
             eprintln!("{} {}", "Error evaluating release gate:".red().bold(), e);
 
             // Emit a minimal SARIF log so CI scanners never fail on missing files
-            let mut err_sarif = relgate::sarif::SarifLog::new();
+            let mut err_sarif = binfence::sarif::SarifLog::new();
             err_sarif.add_rule(
-                "REL000-EVAL-ERROR",
+                "BIN000-EVAL-ERROR",
                 "EvaluationError",
                 "Release gate failed to evaluate binary",
                 Some("An I/O or parser error occurred while inspecting the target or baseline binary."),
                 "error",
             );
             err_sarif.add_result(
-                "REL000-EVAL-ERROR",
+                "BIN000-EVAL-ERROR",
                 "error",
                 &format!("Evaluation error: {}", e),
                 &cli.binary,
@@ -174,7 +174,7 @@ fn main() {
 
             // Write minimal step summary
             let summary_err = format!(
-                "### 🔴 Relgate Security Gate: **FAILED (Evaluation Error)**\n\n**Error**: {}\n\nTarget Asset: `{}`\n",
+                "### 🔴 Binfence Security Gate: **FAILED (Evaluation Error)**\n\n**Error**: {}\n\nTarget Asset: `{}`\n",
                 e, cli.binary
             );
             if let Some(ref path) = cli.summary_file {
@@ -262,7 +262,7 @@ fn main() {
         );
         println!(
             "{}",
-            "       RELGATE — Binary Release Security Gate & Auditor"
+            "       BINFENCE — Binary Release Security Gate & Auditor"
                 .bold()
                 .cyan()
         );

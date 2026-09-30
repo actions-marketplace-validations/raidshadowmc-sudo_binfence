@@ -1,5 +1,5 @@
-use relgate::checker::evaluate_gate;
-use relgate::policy::GatePolicy;
+use binfence::checker::evaluate_gate;
+use binfence::policy::GatePolicy;
 
 use std::fs;
 
@@ -110,7 +110,7 @@ fn test_evaluate_gate_detects_rwx_section() {
     assert!(
         eval.findings
             .iter()
-            .any(|f| f.rule_id == "REL004-RWX-SECTION")
+            .any(|f| f.rule_id == "BIN004-RWX-SECTION")
     );
 
     let _ = fs::remove_file(rwx_file);
@@ -354,7 +354,7 @@ fn test_evaluate_gate_detects_synthetic_pe_rwx() {
     assert!(
         eval.findings
             .iter()
-            .any(|f| f.rule_id == "REL004-RWX-SECTION")
+            .any(|f| f.rule_id == "BIN004-RWX-SECTION")
     );
 
     let _ = fs::remove_file(target_file);
@@ -384,7 +384,7 @@ fn test_evaluate_gate_detects_excess_new_sections() {
     assert!(
         eval.findings
             .iter()
-            .any(|f| f.rule_id == "REL011-EXCESS-NEW-SECTIONS")
+            .any(|f| f.rule_id == "BIN011-EXCESS-NEW-SECTIONS")
     );
 
     let _ = fs::remove_file(baseline_file);

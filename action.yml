@@ -1,4 +1,4 @@
-name: 'relgate'
+name: 'binfence'
 description: 'Binary release security gate & mitigation regression auditor for CI/CD'
 author: 'raidshadowmc-sudo'
 
@@ -58,35 +58,35 @@ inputs:
   sarif-file:
     description: 'Output path for generated SARIF v2.1.0 security report'
     required: false
-    default: 'relgate.sarif'
+    default: 'binfence.sarif'
   summary:
     description: 'Automatically output rich Markdown report to GITHUB_STEP_SUMMARY'
     required: false
     default: 'true'
   version:
-    description: 'Release version of relgate to download (e.g. v0.1.2). Defaults to action ref or v0.1.2.'
+    description: 'Release version of binfence to download (e.g. v0.1.3). Defaults to action ref or v0.1.3.'
     required: false
     default: ''
 
 outputs:
   passed:
     description: 'Whether the release gate passed all checks (true/false)'
-    value: ${{ steps.run-relgate.outputs.passed }}
+    value: ${{ steps.run-binfence.outputs.passed }}
   sarif-path:
     description: 'Path to the generated SARIF report file'
-    value: ${{ steps.run-relgate.outputs.sarif-path }}
+    value: ${{ steps.run-binfence.outputs.sarif-path }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Ensure relgate CLI is available
+    - name: Ensure binfence CLI is available
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
       run: |
-        if command -v relgate &> /dev/null; then
-          echo "relgate is already available in PATH: $(command -v relgate)"
+        if command -v binfence &> /dev/null; then
+          echo "binfence is already available in PATH: $(command -v binfence)"
           exit 0
         fi
 
@@ -96,9 +96,9 @@ runs:
         elif [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+ ]]; then
           VERSION="$ACTION_REF"
         else
-          VERSION="v0.1.2"
+          VERSION="v0.1.3"
         fi
-        echo "Selected relgate release version: $VERSION"
+        echo "Selected binfence release version: $VERSION"
 
         OS="${RUNNER_OS}"
         ARCH="${RUNNER_ARCH}"
@@ -133,44 +133,49 @@ runs:
             ;;
         esac
 
-        ASSET_NAME="relgate-${TARGET}.${EXT}"
-        DOWNLOAD_URL="https://github.com/raidshadowmc-sudo/relgate/releases/download/${VERSION}/${ASSET_NAME}"
-        SUMS_URL="https://github.com/raidshadowmc-sudo/relgate/releases/download/${VERSION}/SHA256SUMS.txt"
+        ASSET_NAME="binfence-${TARGET}.${EXT}"
+        DOWNLOAD_URL="https://github.com/raidshadowmc-sudo/binfence/releases/download/${VERSION}/${ASSET_NAME}"
+        SUMS_URL="https://github.com/raidshadowmc-sudo/binfence/releases/download/${VERSION}/SHA256SUMS.txt"
 
-        INSTALL_DIR="${RUNNER_TEMP:-/tmp}/relgate-bin"
+        INSTALL_DIR="${RUNNER_TEMP:-/tmp}/binfence-bin"
         mkdir -p "$INSTALL_DIR"
 
-        echo "Fetching relgate ${VERSION} for ${TARGET} from ${DOWNLOAD_URL}..."
+        echo "Fetching binfence ${VERSION} for ${TARGET} from ${DOWNLOAD_URL}..."
         HTTP_CODE=$(curl -sSL -w "%{http_code}" -o "${INSTALL_DIR}/${ASSET_NAME}" "$DOWNLOAD_URL" || true)
 
         if [ "$HTTP_CODE" = "200" ]; then
           echo "Downloaded ${ASSET_NAME} successfully. Verifying SHA-256 integrity..."
           SUMS_FILE="${INSTALL_DIR}/SHA256SUMS.txt"
-          if curl -fsSL -o "$SUMS_FILE" "$SUMS_URL"; then
-            EXPECTED_HASH=$(grep -E "[[:space:]]${ASSET_NAME}$" "$SUMS_FILE" | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
-            if [ -n "$EXPECTED_HASH" ]; then
-              if command -v sha256sum &> /dev/null; then
-                ACTUAL_HASH=$( (cd "$INSTALL_DIR" && sha256sum "$ASSET_NAME") | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
-              elif command -v shasum &> /dev/null; then
-                ACTUAL_HASH=$( (cd "$INSTALL_DIR" && shasum -a 256 "$ASSET_NAME") | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
-              else
-                echo "Warning: Neither sha256sum nor shasum found on runner, skipping hash verification." >&2
-                ACTUAL_HASH="$EXPECTED_HASH"
-              fi
-
-              if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
-                echo "CRITICAL SECURITY ERROR: SHA-256 checksum mismatch for ${ASSET_NAME}!" >&2
-                echo "Expected: $EXPECTED_HASH" >&2
-                echo "Actual:   $ACTUAL_HASH" >&2
-                exit 1
-              fi
-              echo "SHA-256 checksum verified: $ACTUAL_HASH"
-            else
-              echo "Warning: ${ASSET_NAME} not listed in SHA256SUMS.txt, skipping hash verification."
-            fi
-          else
-            echo "Warning: Could not fetch SHA256SUMS.txt, skipping hash verification."
+          if ! curl -fsSL -o "$SUMS_FILE" "$SUMS_URL"; then
+            echo "CRITICAL SECURITY ERROR: Could not fetch SHA256SUMS.txt from ${SUMS_URL}!" >&2
+            exit 1
           fi
+
+          # Strip any Windows CRLF carriage returns so grep matches accurately
+          tr -d '\r' < "$SUMS_FILE" > "${SUMS_FILE}.unix" && mv "${SUMS_FILE}.unix" "$SUMS_FILE"
+
+          EXPECTED_HASH=$(grep -E "[[:space:]]${ASSET_NAME}$" "$SUMS_FILE" | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$EXPECTED_HASH" ]; then
+            echo "CRITICAL SECURITY ERROR: ${ASSET_NAME} not listed in SHA256SUMS.txt!" >&2
+            exit 1
+          fi
+
+          if command -v sha256sum &> /dev/null; then
+            ACTUAL_HASH=$( (cd "$INSTALL_DIR" && sha256sum "$ASSET_NAME") | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
+          elif command -v shasum &> /dev/null; then
+            ACTUAL_HASH=$( (cd "$INSTALL_DIR" && shasum -a 256 "$ASSET_NAME") | awk '{print $1}' | tr -dc '0-9a-zA-Z' | tr '[:upper:]' '[:lower:]')
+          else
+            echo "CRITICAL SECURITY ERROR: Neither sha256sum nor shasum found on runner to verify hash!" >&2
+            exit 1
+          fi
+
+          if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+            echo "CRITICAL SECURITY ERROR: SHA-256 checksum mismatch for ${ASSET_NAME}!" >&2
+            echo "Expected: $EXPECTED_HASH" >&2
+            echo "Actual:   $ACTUAL_HASH" >&2
+            exit 1
+          fi
+          echo "SHA-256 checksum verified: $ACTUAL_HASH"
 
           echo "Extracting ${ASSET_NAME}..."
           if [ "$EXT" = "zip" ]; then
@@ -180,39 +185,39 @@ runs:
           fi
 
           if [ "$OS" != "Windows" ]; then
-            chmod +x "${INSTALL_DIR}/relgate"
+            chmod +x "${INSTALL_DIR}/binfence"
           fi
           echo "$INSTALL_DIR" >> "$GITHUB_PATH"
-          echo "relgate installed to GITHUB_PATH."
+          echo "binfence installed to GITHUB_PATH."
         else
           echo "Failed to download prebuilt binary (HTTP ${HTTP_CODE}). Falling back to cargo install..." >&2
           if command -v cargo &> /dev/null; then
-            cargo install --git https://github.com/raidshadowmc-sudo/relgate.git --locked --tag "$VERSION" || cargo install --git https://github.com/raidshadowmc-sudo/relgate.git --locked
+            cargo install --git https://github.com/raidshadowmc-sudo/binfence.git --locked --tag "$VERSION"
           else
             echo "Error: Prebuilt binary download failed and cargo is not installed on runner." >&2
             exit 1
           fi
         fi
 
-    - name: Run relgate evaluation
-      id: run-relgate
+    - name: Run binfence evaluation
+      id: run-binfence
       shell: bash
       env:
         INPUT_BINARY: ${{ inputs.binary }}
         INPUT_BASELINE: ${{ inputs.baseline }}
-        RELGATE_FAIL_ON_DEGRADED: ${{ inputs.fail-on-degraded }}
-        RELGATE_REQUIRE_ASLR: ${{ inputs.require-aslr }}
-        RELGATE_REQUIRE_DEP: ${{ inputs.require-dep }}
-        RELGATE_DISALLOW_RWX: ${{ inputs.fail-on-rwx }}
-        RELGATE_FAIL_ON_TAMPERED: ${{ inputs.fail-on-tampered }}
-        RELGATE_REQUIRE_AUTHENTICODE: ${{ inputs.require-authenticode }}
-        RELGATE_REQUIRE_CFG: ${{ inputs.require-cfg }}
-        RELGATE_REQUIRE_STACK_CANARY: ${{ inputs.require-stack-canary }}
-        RELGATE_MAX_NEW_SECTIONS: ${{ inputs.max-new-sections }}
-        RELGATE_MAX_ENTROPY: ${{ inputs.max-entropy }}
-        RELGATE_YARA_RULES: ${{ inputs.yara-rules }}
-        RELGATE_SARIF_FILE: ${{ inputs.sarif-file }}
-        RELGATE_SUMMARY: ${{ inputs.summary }}
+        BINFENCE_FAIL_ON_DEGRADED: ${{ inputs.fail-on-degraded }}
+        BINFENCE_REQUIRE_ASLR: ${{ inputs.require-aslr }}
+        BINFENCE_REQUIRE_DEP: ${{ inputs.require-dep }}
+        BINFENCE_DISALLOW_RWX: ${{ inputs.fail-on-rwx }}
+        BINFENCE_FAIL_ON_TAMPERED: ${{ inputs.fail-on-tampered }}
+        BINFENCE_REQUIRE_AUTHENTICODE: ${{ inputs.require-authenticode }}
+        BINFENCE_REQUIRE_CFG: ${{ inputs.require-cfg }}
+        BINFENCE_REQUIRE_STACK_CANARY: ${{ inputs.require-stack-canary }}
+        BINFENCE_MAX_NEW_SECTIONS: ${{ inputs.max-new-sections }}
+        BINFENCE_MAX_ENTROPY: ${{ inputs.max-entropy }}
+        BINFENCE_YARA_RULES: ${{ inputs.yara-rules }}
+        BINFENCE_SARIF_FILE: ${{ inputs.sarif-file }}
+        BINFENCE_SUMMARY: ${{ inputs.summary }}
 
       run: |
         ARGS=(--binary "$INPUT_BINARY")
@@ -220,11 +225,11 @@ runs:
           ARGS+=(--baseline "$INPUT_BASELINE")
         fi
 
-        [ -z "$RELGATE_MAX_NEW_SECTIONS" ] && unset RELGATE_MAX_NEW_SECTIONS
-        [ -z "$RELGATE_YARA_RULES" ] && unset RELGATE_YARA_RULES
-        [ -z "$RELGATE_MAX_ENTROPY" ] && unset RELGATE_MAX_ENTROPY
+        [ -z "$BINFENCE_MAX_NEW_SECTIONS" ] && unset BINFENCE_MAX_NEW_SECTIONS
+        [ -z "$BINFENCE_YARA_RULES" ] && unset BINFENCE_YARA_RULES
+        [ -z "$BINFENCE_MAX_ENTROPY" ] && unset BINFENCE_MAX_ENTROPY
 
-        relgate "${ARGS[@]}"
+        binfence "${ARGS[@]}"
         EXIT_CODE=$?
 
         if [ $EXIT_CODE -eq 0 ]; then
@@ -233,4 +238,4 @@ runs:
           echo "passed=false" >> "$GITHUB_OUTPUT"
           exit $EXIT_CODE
         fi
-        echo "sarif-path=$RELGATE_SARIF_FILE" >> "$GITHUB_OUTPUT"
+        echo "sarif-path=$BINFENCE_SARIF_FILE" >> "$GITHUB_OUTPUT"

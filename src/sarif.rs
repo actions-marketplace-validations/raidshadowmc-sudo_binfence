@@ -92,9 +92,10 @@ impl SarifLog {
             runs: vec![SarifRun {
                 tool: SarifTool {
                     driver: SarifDriver {
-                        name: "relgate".to_string(),
+                        name: "binfence".to_string(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
-                        information_uri: "https://github.com/raidshadowmc-sudo/relgate".to_string(),
+                        information_uri: "https://github.com/raidshadowmc-sudo/binfence"
+                            .to_string(),
                         rules: Vec::new(),
                     },
                 },
@@ -126,7 +127,7 @@ impl SarifLog {
                     level: default_level.to_string(),
                 },
                 help_uri: Some(
-                    "https://github.com/raidshadowmc-sudo/relgate#security-rules-evaluated"
+                    "https://github.com/raidshadowmc-sudo/binfence#security-rules-evaluated"
                         .to_string(),
                 ),
             });
