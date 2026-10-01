@@ -115,6 +115,18 @@ To catch regressions between consecutive releases:
 
 `binfence` can also be run locally on your development machine:
 
+### Prebuilt Binaries (Linux, macOS, Windows)
+Standalone pre-compiled binaries are published for every release on [GitHub Releases](https://github.com/raidshadowmc-sudo/binfence/releases/latest):
+
+| Target Platform | Architecture | Binary Package |
+|---|---|---|
+| **Linux** | `x86_64` (glibc) | [`binfence-*-x86_64-unknown-linux-gnu.tar.gz`](https://github.com/raidshadowmc-sudo/binfence/releases/latest) |
+| **Linux** | `aarch64` (ARM64) | [`binfence-*-aarch64-unknown-linux-gnu.tar.gz`](https://github.com/raidshadowmc-sudo/binfence/releases/latest) |
+| **Windows** | `x86_64` (MSVC) | [`binfence-*-x86_64-pc-windows-msvc.zip`](https://github.com/raidshadowmc-sudo/binfence/releases/latest) |
+| **macOS** | Apple Silicon (`aarch64`) | [`binfence-*-aarch64-apple-darwin.tar.gz`](https://github.com/raidshadowmc-sudo/binfence/releases/latest) |
+| **macOS** | Intel (`x86_64`) | [`binfence-*-x86_64-apple-darwin.tar.gz`](https://github.com/raidshadowmc-sudo/binfence/releases/latest) |
+
+### From crates.io
 ```bash
 # Install from crates.io
 cargo install binfence --locked
