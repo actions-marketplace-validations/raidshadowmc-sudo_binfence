@@ -4,16 +4,19 @@ use binfence::policy::GatePolicy;
 use std::fs;
 
 #[test]
-fn test_evaluate_gate_on_binlens_release() {
-    let binary_path = "../binlens/target/release/binlens.exe";
-    if !std::path::Path::new(binary_path).exists() {
-        return;
-    }
+fn test_evaluate_gate_on_pe_fixture() {
+    let binary_path = "tests/fixtures/sample_pe.exe";
+    assert!(
+        std::path::Path::new(binary_path).exists(),
+        "required PE fixture is missing: {}",
+        binary_path
+    );
 
     let policy = GatePolicy {
         fail_on_degraded: true,
         require_aslr: true,
         require_dep: true,
+        require_cfg: true,
         disallow_rwx: true,
         fail_on_tampered: true,
         require_authenticode: false,
@@ -23,24 +26,26 @@ fn test_evaluate_gate_on_binlens_release() {
     let eval = evaluate_gate(binary_path, None, &policy).expect("evaluation should succeed");
     assert!(
         eval.passed,
-        "binlens.exe should pass default security gates"
+        "sample_pe.exe should pass default security gates"
     );
     assert!(
         eval.findings.is_empty(),
-        "expected 0 findings on hardened binlens.exe"
+        "expected 0 findings on hardened sample_pe.exe"
     );
     assert_eq!(eval.sarif.runs[0].results.len(), 0);
 }
 
 #[test]
 fn test_evaluate_gate_detects_mitigation_degradation() {
-    let binary_path = "../binlens/target/release/binlens.exe";
-    if !std::path::Path::new(binary_path).exists() {
-        return;
-    }
+    let binary_path = "tests/fixtures/sample_pe.exe";
+    assert!(
+        std::path::Path::new(binary_path).exists(),
+        "required PE fixture is missing: {}",
+        binary_path
+    );
 
-    // Read genuine binlens.exe
-    let mut data = fs::read(binary_path).expect("read binlens.exe");
+    // Read genuine sample_pe.exe
+    let mut data = fs::read(binary_path).expect("read sample_pe.exe");
 
     // Patch PE header to strip ASLR (IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE = 0x0040)
     // Find PE offset at 0x3C
@@ -55,7 +60,7 @@ fn test_evaluate_gate_detects_mitigation_degradation() {
     let stripped_chars = old_chars & !0x0040; // clear DYNAMIC_BASE
     data[dll_chars_offset..dll_chars_offset + 2].copy_from_slice(&stripped_chars.to_le_bytes());
 
-    let degraded_file = "target/test_degraded_binlens.exe";
+    let degraded_file = "target/test_degraded_sample_pe.exe";
     fs::write(degraded_file, &data).expect("write degraded binary");
 
     let policy = GatePolicy {
@@ -80,12 +85,14 @@ fn test_evaluate_gate_detects_mitigation_degradation() {
 
 #[test]
 fn test_evaluate_gate_detects_rwx_section() {
-    let binary_path = "../binlens/target/release/binlens.exe";
-    if !std::path::Path::new(binary_path).exists() {
-        return;
-    }
+    let binary_path = "tests/fixtures/sample_pe.exe";
+    assert!(
+        std::path::Path::new(binary_path).exists(),
+        "required PE fixture is missing: {}",
+        binary_path
+    );
 
-    let mut data = fs::read(binary_path).expect("read binlens.exe");
+    let mut data = fs::read(binary_path).expect("read sample_pe.exe");
     let pe_offset = u32::from_le_bytes(data[0x3C..0x40].try_into().unwrap()) as usize;
     let opt_size =
         u16::from_le_bytes(data[pe_offset + 20..pe_offset + 22].try_into().unwrap()) as usize;
@@ -97,7 +104,7 @@ fn test_evaluate_gate_detects_rwx_section() {
     let rwx_chars = old_chars | 0x80000000 | 0x20000000;
     data[char_offset..char_offset + 4].copy_from_slice(&rwx_chars.to_le_bytes());
 
-    let rwx_file = "target/test_rwx_binlens.exe";
+    let rwx_file = "target/test_rwx_sample_pe.exe";
     fs::write(rwx_file, &data).expect("write rwx binary");
 
     let policy = GatePolicy {

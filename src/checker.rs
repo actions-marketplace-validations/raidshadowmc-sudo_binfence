@@ -30,6 +30,17 @@ pub fn map_or_read_file(path_str: &str) -> Result<(Option<memmap2::Mmap>, Vec<u8
         return Ok((None, Vec::new()));
     }
 
+    // SAFETY:
+    // 1. The backing file is opened strictly read-only (`fs::File::open`), and the mapping
+    //    is read-only (`memmap2::Mmap::map`), eliminating data races from this process.
+    // 2. The mapping's memory is exposed only via immutable slice borrows (`&[u8]`) bounded
+    //    by the lifetime of the `Mmap` struct; raw pointers are never persisted outside.
+    // 3. Assumptions & Invariants: Callers/external processes must not concurrently truncate
+    //    or overwrite the underlying binary on disk while analysis is running (which would cause
+    //    SIGBUS on POSIX or an access violation on Windows).
+    // 4. Fallback: If `mmap` creation fails for any reason (e.g. unsupported filesystem,
+    //    virtual memory limit, locked descriptor), we immediately fall back to a safe,
+    //    heap-allocated `fs::read(path)` buffer.
     match unsafe { memmap2::Mmap::map(&file) } {
         Ok(mmap) => Ok((Some(mmap), Vec::new())),
         Err(_) => {

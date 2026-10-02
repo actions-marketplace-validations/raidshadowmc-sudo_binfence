@@ -9,7 +9,29 @@ Binary release security gate & mitigation regression auditor for CI/CD pipelines
 
 `binfence` audits compiled release assets (PE, ELF, Mach-O) in CI/CD before they hit production. It guards against accidental compiler or linker regressions that strip exploit mitigations, violate `W^X` memory protection, corrupt Authenticode digests, or inject abnormal entropy.
 
-Powered by [`binlens`](https://github.com/raidshadowmc-sudo/binlens).
+---
+
+## Ecosystem: binlens ↔ binfence
+
+```text
+              ┌──────────────┐
+binary ──────►│   binlens    │  Interactive terminal inspection, deep forensics,
+              │ analysis     │  headers, imports/exports, and structural diffs
+              └──────┬───────┘
+                     │ structured analysis
+                     ▼
+              ┌──────────────┐
+              │   binfence   │  CI/CD policy gate: enforces security baselines,
+              │ policy gate  │  detects mitigation regressions, emits SARIF
+              └──────┬───────┘
+                     │
+          ┌──────────┼──────────┐
+          ▼          ▼          ▼
+        CI fail     SARIF    summary
+```
+
+* **[`binlens`](https://github.com/raidshadowmc-sudo/binlens)** is the underlying binary inspection and analysis engine. Use it for interactive debugging, manual triage, and detailed binary forensics.
+* **`binfence`** builds on top of `binlens` to enforce release security policies in CI/CD pipelines, blocking releases that degrade exploit mitigations or violate `W^X`.
 
 ---
 
